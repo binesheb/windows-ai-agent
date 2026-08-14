@@ -5,6 +5,7 @@ from uuid import uuid4
 
 import psutil
 from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request
+from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, Field
 
 from agent.audit.context import set_caller, set_request_context
@@ -19,7 +20,7 @@ from agent.system.filesystem import list_directory, read_text_file
 from agent.system.inventory import get_system_inventory
 from agent.system.services import get_service_inventory
 
-app = FastAPI(title="Windows AI Agent", version="0.5.0", description="Security-first local Windows AI control gateway")
+app = FastAPI(title="Windows AI Agent", version="0.5.1", description="Security-first local Windows AI control gateway")
 policy = PolicyEngine()
 audit_logger = AuditLogger()
 approvals = ApprovalManager()
@@ -79,11 +80,18 @@ def _capability_snapshot() -> list[dict[str, object]]:
 
 @app.get("/")
 def root() -> dict:
-    return {"name": "Windows AI Agent", "version": "0.5.0", "mode": "READ_ONLY", "status": "online"}
+    return {"name": "Windows AI Agent", "version": "0.5.1", "mode": "READ_ONLY", "status": "online"}
 
 @app.get("/health")
 def health() -> dict:
     return {"status": "healthy", "mode": "READ_ONLY"}
+
+@app.get("/approval-ui", response_class=HTMLResponse, include_in_schema=False)
+def approval_ui() -> HTMLResponse:
+    html_path = Path(__file__).parent / "web" / "approval.html"
+    if not html_path.is_file():
+        raise HTTPException(status_code=404, detail="Approval UI is not installed")
+    return HTMLResponse(html_path.read_text(encoding="utf-8"))
 
 @app.get("/auth/status")
 def auth_status() -> dict:
@@ -169,7 +177,7 @@ def resources(_: str = Depends(require_authentication)) -> dict:
     for workspace in filesystem_workspaces():
         decision = evaluate_path(workspace["path"], roots)
         workspace_items.append({"name": workspace["name"], "path": decision.normalized, "access": workspace["access"], "allowed": decision.allowed, "reason": decision.reason})
-    payload = {"agent": {"name": "Windows AI Agent", "version": "0.5.0", "mode": "read_only"}, "capabilities": _capability_snapshot(), "workspaces": workspace_items}
+    payload = {"agent": {"name": "Windows AI Agent", "version": "0.5.1", "mode": "read_only"}, "capabilities": _capability_snapshot(), "workspaces": workspace_items}
     return payload
 
 @app.get("/filesystem/check")

@@ -8,7 +8,7 @@ from fastapi import FastAPI, HTTPException, Query
 from agent.audit.logger import AuditLogger
 from agent.core.approval import ApprovalManager
 from agent.core.capabilities import all_capabilities
-from agent.core.config import filesystem_settings
+from agent.core.config import filesystem_settings, filesystem_workspaces
 from agent.core.paths import evaluate_path
 from agent.core.policy import PolicyEngine
 from agent.system.filesystem import list_directory, read_text_file
@@ -18,7 +18,7 @@ from agent.system.services import get_service_inventory
 
 app = FastAPI(
     title="Windows AI Agent",
-    version="0.3.0",
+    version="0.3.1",
     description="Security-first local Windows AI control gateway",
 )
 
@@ -61,7 +61,7 @@ def get_process_inventory(limit: int = 250) -> list[dict]:
 def root() -> dict:
     return {
         "name": "Windows AI Agent",
-        "version": "0.3.0",
+        "version": "0.3.1",
         "mode": "READ_ONLY",
         "status": "online",
     }
@@ -150,6 +150,33 @@ def services(limit: int = Query(default=500, ge=1, le=1000)) -> dict:
         details={"count": len(result), "limit": limit},
     )
     return {"count": len(result), "services": result}
+
+
+@app.get("/workspaces")
+def workspaces() -> dict:
+    """Describe configured read-only filesystem workspaces without reading their contents."""
+    configured = filesystem_workspaces()
+    roots, _, _ = filesystem_settings()
+    resolved: list[dict] = []
+
+    for workspace in configured:
+        path_decision = evaluate_path(workspace["path"], roots)
+        resolved.append(
+            {
+                "name": workspace["name"],
+                "path": path_decision.normalized,
+                "access": workspace["access"],
+                "allowed": path_decision.allowed,
+                "reason": path_decision.reason,
+            }
+        )
+
+    audit_logger.record(
+        "filesystem.workspaces",
+        "success",
+        details={"count": len(resolved)},
+    )
+    return {"count": len(resolved), "workspaces": resolved}
 
 
 @app.get("/filesystem/check")

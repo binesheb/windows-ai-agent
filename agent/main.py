@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 from pathlib import Path
+from uuid import uuid4
 
 import psutil
-from fastapi import Depends, FastAPI, Header, HTTPException, Query
+from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request
 
+from agent.audit.context import set_caller, set_request_context
 from agent.audit.logger import AuditLogger
 from agent.core.approval import ApprovalManager
 from agent.core.auth import get_or_create_token, token_matches, token_path
@@ -19,13 +21,22 @@ from agent.system.services import get_service_inventory
 
 app = FastAPI(
     title="Windows AI Agent",
-    version="0.4.0",
+    version="0.4.1",
     description="Security-first local Windows AI control gateway",
 )
 
 policy = PolicyEngine()
 audit_logger = AuditLogger()
 approvals = ApprovalManager()
+
+
+@app.middleware("http")
+async def request_context_middleware(request: Request, call_next):
+    request_id = request.headers.get("X-Request-ID") or f"req_{uuid4().hex}"
+    set_request_context(request_id)
+    response = await call_next(request)
+    response.headers["X-Request-ID"] = request_id
+    return response
 
 
 def _authentication_required() -> bool:
@@ -36,9 +47,11 @@ def _authentication_required() -> bool:
 def require_authentication(x_agent_token: str | None = Header(default=None)) -> str:
     """Authenticate local API callers without ever exposing the token in the API."""
     if not _authentication_required():
+        set_caller("authentication_disabled_by_policy")
         return "authentication_disabled_by_policy"
 
     if token_matches(x_agent_token):
+        set_caller("local_token")
         audit_logger.record("authentication.success", "success")
         return "local_token"
 
@@ -99,7 +112,7 @@ def _capability_snapshot() -> list[dict[str, object]]:
 def root() -> dict:
     return {
         "name": "Windows AI Agent",
-        "version": "0.4.0",
+        "version": "0.4.1",
         "mode": "READ_ONLY",
         "status": "online",
     }
@@ -232,7 +245,7 @@ def resources(_: str = Depends(require_authentication)) -> dict:
         )
 
     payload = {
-        "agent": {"name": "Windows AI Agent", "version": "0.4.0", "mode": "read_only"},
+        "agent": {"name": "Windows AI Agent", "version": "0.4.1", "mode": "read_only"},
         "capabilities": _capability_snapshot(),
         "workspaces": workspace_items,
     }

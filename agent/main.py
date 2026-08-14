@@ -1,19 +1,24 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 import psutil
 from fastapi import FastAPI, HTTPException, Query
 
 from agent.audit.logger import AuditLogger
 from agent.core.approval import ApprovalManager
 from agent.core.capabilities import all_capabilities
+from agent.core.config import filesystem_settings
+from agent.core.paths import evaluate_path
 from agent.core.policy import PolicyEngine
+from agent.system.filesystem import list_directory, read_text_file
 from agent.system.inventory import get_system_inventory
 from agent.system.services import get_service_inventory
 
 
 app = FastAPI(
     title="Windows AI Agent",
-    version="0.2.1",
+    version="0.3.0",
     description="Security-first local Windows AI control gateway",
 )
 
@@ -56,7 +61,7 @@ def get_process_inventory(limit: int = 250) -> list[dict]:
 def root() -> dict:
     return {
         "name": "Windows AI Agent",
-        "version": "0.2.1",
+        "version": "0.3.0",
         "mode": "READ_ONLY",
         "status": "online",
     }
@@ -145,3 +150,97 @@ def services(limit: int = Query(default=500, ge=1, le=1000)) -> dict:
         details={"count": len(result), "limit": limit},
     )
     return {"count": len(result), "services": result}
+
+
+@app.get("/filesystem/check")
+def filesystem_check(path: str = Query(..., min_length=1, max_length=4096)) -> dict:
+    """Evaluate a path without reading its contents."""
+    decision = policy.evaluate("filesystem_read")
+    if not decision.allowed:
+        audit_logger.record("filesystem.check", "denied", details={"path": path})
+        raise HTTPException(status_code=403, detail=decision.reason)
+
+    roots, _, _ = filesystem_settings()
+    path_decision = evaluate_path(path, roots)
+    audit_logger.record(
+        "filesystem.check",
+        "allowed" if path_decision.allowed else "denied",
+        details={"path": path_decision.normalized, "reason": path_decision.reason},
+    )
+    return {
+        "allowed": path_decision.allowed,
+        "path": path_decision.normalized,
+        "reason": path_decision.reason,
+    }
+
+
+@app.get("/filesystem/list")
+def filesystem_list(
+    path: str = Query(default=".", min_length=1, max_length=4096),
+    limit: int = Query(default=500, ge=1, le=500),
+) -> dict:
+    decision = policy.evaluate("filesystem_read")
+    if not decision.allowed:
+        audit_logger.record("filesystem.list", "denied", details={"path": path})
+        raise HTTPException(status_code=403, detail=decision.reason)
+
+    roots, _, configured_limit = filesystem_settings()
+    path_decision = evaluate_path(path, roots)
+    if not path_decision.allowed:
+        audit_logger.record(
+            "filesystem.list",
+            "denied",
+            details={"path": path_decision.normalized, "reason": path_decision.reason},
+        )
+        raise HTTPException(status_code=403, detail=path_decision.reason)
+
+    target = Path(path_decision.normalized)
+    if not target.is_dir():
+        audit_logger.record("filesystem.list", "failed", details={"path": str(target)})
+        raise HTTPException(status_code=400, detail="Path is not a directory")
+
+    result = list_directory(target, min(limit, configured_limit))
+    audit_logger.record(
+        "filesystem.list",
+        "success",
+        details={"path": str(target), "count": len(result)},
+    )
+    return {"path": str(target), "count": len(result), "entries": result}
+
+
+@app.get("/filesystem/read")
+def filesystem_read(path: str = Query(..., min_length=1, max_length=4096)) -> dict:
+    decision = policy.evaluate("filesystem_read")
+    if not decision.allowed:
+        audit_logger.record("filesystem.read", "denied", details={"path": path})
+        raise HTTPException(status_code=403, detail=decision.reason)
+
+    roots, max_read_bytes, _ = filesystem_settings()
+    path_decision = evaluate_path(path, roots)
+    if not path_decision.allowed:
+        audit_logger.record(
+            "filesystem.read",
+            "denied",
+            details={"path": path_decision.normalized, "reason": path_decision.reason},
+        )
+        raise HTTPException(status_code=403, detail=path_decision.reason)
+
+    target = Path(path_decision.normalized)
+    try:
+        result = read_text_file(target, max_read_bytes)
+    except FileNotFoundError as exc:
+        audit_logger.record("filesystem.read", "not_found", details={"path": str(target)})
+        raise HTTPException(status_code=404, detail="File not found") from exc
+    except ValueError as exc:
+        audit_logger.record("filesystem.read", "rejected", details={"path": str(target), "reason": str(exc)})
+        raise HTTPException(status_code=413, detail=str(exc)) from exc
+    except (OSError, PermissionError) as exc:
+        audit_logger.record("filesystem.read", "failed", details={"path": str(target), "reason": str(exc)})
+        raise HTTPException(status_code=403, detail="File cannot be read") from exc
+
+    audit_logger.record(
+        "filesystem.read",
+        "success",
+        details={"path": str(target), "size_bytes": result["size_bytes"]},
+    )
+    return result

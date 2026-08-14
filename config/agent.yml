@@ -7,10 +7,10 @@ security:
   remote_connections: false
 
 filesystem:
-  # Relative roots are resolved from the agent working directory.
-  # Additional roots can be supplied later through an explicit configuration change.
-  allowed_roots:
-    - .
+  workspaces:
+    - name: agent
+      path: .
+      access: read
   max_read_bytes: 1048576
   max_entries: 500
 

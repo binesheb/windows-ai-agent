@@ -1,0 +1,10 @@
+server:
+  host: 127.0.0.1
+  port: 8765
+
+security:
+  mode: read_only
+  remote_connections: false
+
+logging:
+  audit_file: logs/audit.jsonl

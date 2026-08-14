@@ -1,0 +1,47 @@
+version: 1
+
+agent:
+  mode: read_only
+  require_authentication: true
+  allow_remote_access: false
+
+capabilities:
+  system_inventory:
+    enabled: true
+    risk: read
+
+  filesystem_read:
+    enabled: false
+    risk: read
+
+  filesystem_write:
+    enabled: false
+    risk: safe_write
+
+  process_read:
+    enabled: false
+    risk: read
+
+  process_control:
+    enabled: false
+    risk: sensitive
+
+  service_read:
+    enabled: false
+    risk: read
+
+  service_control:
+    enabled: false
+    risk: sensitive
+
+  powershell:
+    enabled: false
+    risk: dangerous
+
+  docker:
+    enabled: false
+    risk: sensitive
+
+  git:
+    enabled: false
+    risk: safe_write

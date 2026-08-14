@@ -12,8 +12,6 @@ class PathDecision:
     reason: str
 
 
-# These locations are never readable through the agent, even if a workspace
-# is accidentally configured too broadly.
 SENSITIVE_PREFIXES = (
     r"C:\Windows",
     r"C:\Program Files",
@@ -31,9 +29,9 @@ SENSITIVE_USER_SUFFIXES = (
 
 
 def normalize_path(value: str) -> Path:
-    """Return an absolute, normalized Windows path without touching the file."""
+    """Return an absolute path with existing junctions/symlinks resolved."""
     expanded = os.path.expandvars(os.path.expanduser(value.strip()))
-    return Path(os.path.abspath(os.path.normpath(expanded)))
+    return Path(expanded).resolve(strict=False)
 
 
 def _casefold(path: Path) -> str:
@@ -58,7 +56,7 @@ def is_sensitive(path: Path) -> bool:
 
     home = Path.home()
     for suffix in SENSITIVE_USER_SUFFIXES:
-        sensitive = home / suffix
+        sensitive = (home / suffix).resolve(strict=False)
         if _is_within(path, sensitive):
             return True
 
@@ -68,13 +66,17 @@ def is_sensitive(path: Path) -> bool:
 def evaluate_path(value: str, allowed_roots: list[str]) -> PathDecision:
     try:
         path = normalize_path(value)
-    except (OSError, ValueError) as exc:
+    except (OSError, RuntimeError, ValueError) as exc:
         return PathDecision(False, value, f"Invalid path: {exc}")
 
     if is_sensitive(path):
         return PathDecision(False, str(path), "Path is protected by the sensitive-path policy")
 
-    roots = [normalize_path(root) for root in allowed_roots]
+    try:
+        roots = [normalize_path(root) for root in allowed_roots]
+    except (OSError, RuntimeError, ValueError) as exc:
+        return PathDecision(False, str(path), f"Invalid workspace policy: {exc}")
+
     if not any(_is_within(path, root) or path == root for root in roots):
         return PathDecision(False, str(path), "Path is outside configured read-only workspaces")
 

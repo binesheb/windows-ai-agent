@@ -3,12 +3,13 @@ from __future__ import annotations
 from pathlib import Path
 
 import psutil
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import Depends, FastAPI, Header, HTTPException, Query
 
 from agent.audit.logger import AuditLogger
 from agent.core.approval import ApprovalManager
+from agent.core.auth import get_or_create_token, token_matches, token_path
 from agent.core.capabilities import all_capabilities
-from agent.core.config import filesystem_settings, filesystem_workspaces
+from agent.core.config import filesystem_settings, filesystem_workspaces, load_config
 from agent.core.paths import evaluate_path
 from agent.core.policy import PolicyEngine
 from agent.system.filesystem import list_directory, read_text_file
@@ -18,13 +19,35 @@ from agent.system.services import get_service_inventory
 
 app = FastAPI(
     title="Windows AI Agent",
-    version="0.3.2",
+    version="0.4.0",
     description="Security-first local Windows AI control gateway",
 )
 
 policy = PolicyEngine()
 audit_logger = AuditLogger()
 approvals = ApprovalManager()
+
+
+def _authentication_required() -> bool:
+    config = load_config()
+    return bool(config.get("agent", {}).get("require_authentication", True))
+
+
+def require_authentication(x_agent_token: str | None = Header(default=None)) -> str:
+    """Authenticate local API callers without ever exposing the token in the API."""
+    if not _authentication_required():
+        return "authentication_disabled_by_policy"
+
+    if token_matches(x_agent_token):
+        audit_logger.record("authentication.success", "success")
+        return "local_token"
+
+    audit_logger.record(
+        "authentication.failed",
+        "denied",
+        details={"reason": "missing_or_invalid_token"},
+    )
+    raise HTTPException(status_code=401, detail="Authentication required")
 
 
 def _mb(value: int) -> float:
@@ -76,7 +99,7 @@ def _capability_snapshot() -> list[dict[str, object]]:
 def root() -> dict:
     return {
         "name": "Windows AI Agent",
-        "version": "0.3.2",
+        "version": "0.4.0",
         "mode": "READ_ONLY",
         "status": "online",
     }
@@ -87,13 +110,26 @@ def health() -> dict:
     return {"status": "healthy", "mode": "READ_ONLY"}
 
 
+@app.get("/auth/status")
+def auth_status() -> dict:
+    """Report authentication state without returning the secret."""
+    required = _authentication_required()
+    token = get_or_create_token()
+    return {
+        "required": required,
+        "configured": bool(token),
+        "scheme": "X-Agent-Token" if required else None,
+        "token_path": token_path() if required else None,
+    }
+
+
 @app.get("/capabilities")
-def capabilities() -> dict:
+def capabilities(_: str = Depends(require_authentication)) -> dict:
     return {"capabilities": all_capabilities()}
 
 
 @app.get("/capabilities/{capability}")
-def capability(capability: str) -> dict:
+def capability(capability: str, _: str = Depends(require_authentication)) -> dict:
     decision = policy.evaluate(capability)
     audit_logger.record(
         "policy.evaluate",
@@ -114,12 +150,12 @@ def capability(capability: str) -> dict:
 
 
 @app.get("/approvals")
-def pending_approvals() -> dict:
+def pending_approvals(_: str = Depends(require_authentication)) -> dict:
     return {"requests": [request.__dict__ for request in approvals.list_pending()]}
 
 
 @app.get("/system")
-def system() -> dict:
+def system(_: str = Depends(require_authentication)) -> dict:
     decision = policy.evaluate("system_inventory")
     if not decision.allowed:
         audit_logger.record("system.inventory", "denied")
@@ -131,23 +167,19 @@ def system() -> dict:
 
 
 @app.get("/processes")
-def processes(limit: int = Query(default=250, ge=1, le=500)) -> dict:
+def processes(limit: int = Query(default=250, ge=1, le=500), _: str = Depends(require_authentication)) -> dict:
     decision = policy.evaluate("process_read")
     if not decision.allowed:
         audit_logger.record("process.inventory", "denied")
         raise HTTPException(status_code=403, detail=decision.reason)
 
     result = get_process_inventory(limit)
-    audit_logger.record(
-        "process.inventory",
-        "success",
-        details={"count": len(result), "limit": limit},
-    )
+    audit_logger.record("process.inventory", "success", details={"count": len(result), "limit": limit})
     return {"count": len(result), "processes": result}
 
 
 @app.get("/services")
-def services(limit: int = Query(default=500, ge=1, le=1000)) -> dict:
+def services(limit: int = Query(default=500, ge=1, le=1000), _: str = Depends(require_authentication)) -> dict:
     decision = policy.evaluate("service_read")
     if not decision.allowed:
         audit_logger.record("service.inventory", "denied")
@@ -159,21 +191,15 @@ def services(limit: int = Query(default=500, ge=1, le=1000)) -> dict:
         audit_logger.record("service.inventory", "failed", details={"reason": str(exc)})
         raise HTTPException(status_code=501, detail=str(exc)) from exc
 
-    audit_logger.record(
-        "service.inventory",
-        "success",
-        details={"count": len(result), "limit": limit},
-    )
+    audit_logger.record("service.inventory", "success", details={"count": len(result), "limit": limit})
     return {"count": len(result), "services": result}
 
 
 @app.get("/workspaces")
-def workspaces() -> dict:
-    """Describe configured read-only filesystem workspaces without reading their contents."""
+def workspaces(_: str = Depends(require_authentication)) -> dict:
     configured = filesystem_workspaces()
     roots, _, _ = filesystem_settings()
     resolved: list[dict] = []
-
     for workspace in configured:
         path_decision = evaluate_path(workspace["path"], roots)
         resolved.append(
@@ -185,22 +211,15 @@ def workspaces() -> dict:
                 "reason": path_decision.reason,
             }
         )
-
-    audit_logger.record(
-        "filesystem.workspaces",
-        "success",
-        details={"count": len(resolved)},
-    )
+    audit_logger.record("filesystem.workspaces", "success", details={"count": len(resolved)})
     return {"count": len(resolved), "workspaces": resolved}
 
 
 @app.get("/resources")
-def resources() -> dict:
-    """Return the authoritative machine capabilities and configured resources."""
+def resources(_: str = Depends(require_authentication)) -> dict:
     roots, _, _ = filesystem_settings()
-    configured = filesystem_workspaces()
     workspace_items = []
-    for workspace in configured:
+    for workspace in filesystem_workspaces():
         decision = evaluate_path(workspace["path"], roots)
         workspace_items.append(
             {
@@ -213,28 +232,20 @@ def resources() -> dict:
         )
 
     payload = {
-        "agent": {
-            "name": "Windows AI Agent",
-            "version": "0.3.2",
-            "mode": "read_only",
-        },
+        "agent": {"name": "Windows AI Agent", "version": "0.4.0", "mode": "read_only"},
         "capabilities": _capability_snapshot(),
         "workspaces": workspace_items,
     }
     audit_logger.record(
         "resource.discovery",
         "success",
-        details={
-            "capability_count": len(payload["capabilities"]),
-            "workspace_count": len(workspace_items),
-        },
+        details={"capability_count": len(payload["capabilities"]), "workspace_count": len(workspace_items)},
     )
     return payload
 
 
 @app.get("/filesystem/check")
-def filesystem_check(path: str = Query(..., min_length=1, max_length=4096)) -> dict:
-    """Evaluate a path without reading its contents."""
+def filesystem_check(path: str = Query(..., min_length=1, max_length=4096), _: str = Depends(require_authentication)) -> dict:
     decision = policy.evaluate("filesystem_read")
     if not decision.allowed:
         audit_logger.record("filesystem.check", "denied", details={"path": path})
@@ -242,22 +253,15 @@ def filesystem_check(path: str = Query(..., min_length=1, max_length=4096)) -> d
 
     roots, _, _ = filesystem_settings()
     path_decision = evaluate_path(path, roots)
-    audit_logger.record(
-        "filesystem.check",
-        "allowed" if path_decision.allowed else "denied",
-        details={"path": path_decision.normalized, "reason": path_decision.reason},
-    )
-    return {
-        "allowed": path_decision.allowed,
-        "path": path_decision.normalized,
-        "reason": path_decision.reason,
-    }
+    audit_logger.record("filesystem.check", "allowed" if path_decision.allowed else "denied", details={"path": path_decision.normalized, "reason": path_decision.reason})
+    return {"allowed": path_decision.allowed, "path": path_decision.normalized, "reason": path_decision.reason}
 
 
 @app.get("/filesystem/list")
 def filesystem_list(
     path: str = Query(default=".", min_length=1, max_length=4096),
     limit: int = Query(default=500, ge=1, le=500),
+    _: str = Depends(require_authentication),
 ) -> dict:
     decision = policy.evaluate("filesystem_read")
     if not decision.allowed:
@@ -267,11 +271,7 @@ def filesystem_list(
     roots, _, configured_limit = filesystem_settings()
     path_decision = evaluate_path(path, roots)
     if not path_decision.allowed:
-        audit_logger.record(
-            "filesystem.list",
-            "denied",
-            details={"path": path_decision.normalized, "reason": path_decision.reason},
-        )
+        audit_logger.record("filesystem.list", "denied", details={"path": path_decision.normalized, "reason": path_decision.reason})
         raise HTTPException(status_code=403, detail=path_decision.reason)
 
     target = Path(path_decision.normalized)
@@ -280,16 +280,12 @@ def filesystem_list(
         raise HTTPException(status_code=400, detail="Path is not a directory")
 
     result = list_directory(target, min(limit, configured_limit))
-    audit_logger.record(
-        "filesystem.list",
-        "success",
-        details={"path": str(target), "count": len(result)},
-    )
+    audit_logger.record("filesystem.list", "success", details={"path": str(target), "count": len(result)})
     return {"path": str(target), "count": len(result), "entries": result}
 
 
 @app.get("/filesystem/read")
-def filesystem_read(path: str = Query(..., min_length=1, max_length=4096)) -> dict:
+def filesystem_read(path: str = Query(..., min_length=1, max_length=4096), _: str = Depends(require_authentication)) -> dict:
     decision = policy.evaluate("filesystem_read")
     if not decision.allowed:
         audit_logger.record("filesystem.read", "denied", details={"path": path})
@@ -298,11 +294,7 @@ def filesystem_read(path: str = Query(..., min_length=1, max_length=4096)) -> di
     roots, max_read_bytes, _ = filesystem_settings()
     path_decision = evaluate_path(path, roots)
     if not path_decision.allowed:
-        audit_logger.record(
-            "filesystem.read",
-            "denied",
-            details={"path": path_decision.normalized, "reason": path_decision.reason},
-        )
+        audit_logger.record("filesystem.read", "denied", details={"path": path_decision.normalized, "reason": path_decision.reason})
         raise HTTPException(status_code=403, detail=path_decision.reason)
 
     target = Path(path_decision.normalized)
@@ -318,9 +310,5 @@ def filesystem_read(path: str = Query(..., min_length=1, max_length=4096)) -> di
         audit_logger.record("filesystem.read", "failed", details={"path": str(target), "reason": str(exc)})
         raise HTTPException(status_code=403, detail="File cannot be read") from exc
 
-    audit_logger.record(
-        "filesystem.read",
-        "success",
-        details={"path": str(target), "size_bytes": result["size_bytes"]},
-    )
+    audit_logger.record("filesystem.read", "success", details={"path": str(target), "size_bytes": result["size_bytes"]})
     return result

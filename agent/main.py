@@ -8,11 +8,12 @@ from agent.core.approval import ApprovalManager
 from agent.core.capabilities import all_capabilities
 from agent.core.policy import PolicyEngine
 from agent.system.inventory import get_system_inventory
+from agent.system.services import get_service_inventory
 
 
 app = FastAPI(
     title="Windows AI Agent",
-    version="0.2.0",
+    version="0.2.1",
     description="Security-first local Windows AI control gateway",
 )
 
@@ -55,7 +56,7 @@ def get_process_inventory(limit: int = 250) -> list[dict]:
 def root() -> dict:
     return {
         "name": "Windows AI Agent",
-        "version": "0.2.0",
+        "version": "0.2.1",
         "mode": "READ_ONLY",
         "status": "online",
     }
@@ -123,3 +124,24 @@ def processes(limit: int = Query(default=250, ge=1, le=500)) -> dict:
         details={"count": len(result), "limit": limit},
     )
     return {"count": len(result), "processes": result}
+
+
+@app.get("/services")
+def services(limit: int = Query(default=500, ge=1, le=1000)) -> dict:
+    decision = policy.evaluate("service_read")
+    if not decision.allowed:
+        audit_logger.record("service.inventory", "denied")
+        raise HTTPException(status_code=403, detail=decision.reason)
+
+    try:
+        result = get_service_inventory(limit)
+    except RuntimeError as exc:
+        audit_logger.record("service.inventory", "failed", details={"reason": str(exc)})
+        raise HTTPException(status_code=501, detail=str(exc)) from exc
+
+    audit_logger.record(
+        "service.inventory",
+        "success",
+        details={"count": len(result), "limit": limit},
+    )
+    return {"count": len(result), "services": result}

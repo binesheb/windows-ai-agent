@@ -60,13 +60,17 @@ mcp = FastMCP(
     json_response=True,
     token_verifier=LocalAgentTokenVerifier(),
     auth=AuthSettings(
-        # The local agent token is validated directly; these metadata values
-        # are placeholders for the local-only bridge and are not credentials.
         issuer_url=AnyHttpUrl("https://localhost.invalid"),
         resource_server_url=AnyHttpUrl(MCP_RESOURCE_URL),
         required_scopes=["windows:read"],
     ),
 )
+
+# FastMCP's current direct-execution API reads the bind settings from
+# mcp.settings. Passing host/port to mcp.run() is not supported in the
+# installed SDK version.
+mcp.settings.host = MCP_HOST
+mcp.settings.port = MCP_PORT
 
 
 def _require(capability: str) -> None:
@@ -88,14 +92,16 @@ def list_processes(limit: int = 250) -> dict[str, Any]:
     _require("process_read")
     from agent.main import get_process_inventory
 
-    return {"count": len(get_process_inventory(limit)), "processes": get_process_inventory(limit)}
+    processes = get_process_inventory(limit)
+    return {"count": len(processes), "processes": processes}
 
 
 @mcp.tool()
 def list_services(limit: int = 500) -> dict[str, Any]:
     """List Windows services without starting, stopping, or changing them."""
     _require("service_read")
-    return {"count": len(get_service_inventory(limit)), "services": get_service_inventory(limit)}
+    services = get_service_inventory(limit)
+    return {"count": len(services), "services": services}
 
 
 @mcp.tool()
@@ -168,10 +174,4 @@ def get_capabilities() -> dict[str, Any]:
 
 
 if __name__ == "__main__":
-    mcp.run(
-        transport="streamable-http",
-        host=MCP_HOST,
-        port=MCP_PORT,
-        stateless_http=True,
-        json_response=True,
-    )
+    mcp.run(transport="streamable-http")

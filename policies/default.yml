@@ -11,7 +11,7 @@ capabilities:
     risk: read
 
   filesystem_read:
-    enabled: false
+    enabled: true
     risk: read
 
   filesystem_write:

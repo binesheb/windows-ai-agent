@@ -18,7 +18,7 @@ from agent.system.services import get_service_inventory
 
 app = FastAPI(
     title="Windows AI Agent",
-    version="0.3.1",
+    version="0.3.2",
     description="Security-first local Windows AI control gateway",
 )
 
@@ -57,11 +57,26 @@ def get_process_inventory(limit: int = 250) -> list[dict]:
     return processes[:limit]
 
 
+def _capability_snapshot() -> list[dict[str, object]]:
+    snapshot = []
+    for item in all_capabilities():
+        decision = policy.evaluate(str(item["name"]))
+        snapshot.append(
+            {
+                **item,
+                "enabled": decision.allowed,
+                "requires_approval": decision.requires_approval,
+                "policy_reason": decision.reason,
+            }
+        )
+    return snapshot
+
+
 @app.get("/")
 def root() -> dict:
     return {
         "name": "Windows AI Agent",
-        "version": "0.3.1",
+        "version": "0.3.2",
         "mode": "READ_ONLY",
         "status": "online",
     }
@@ -177,6 +192,44 @@ def workspaces() -> dict:
         details={"count": len(resolved)},
     )
     return {"count": len(resolved), "workspaces": resolved}
+
+
+@app.get("/resources")
+def resources() -> dict:
+    """Return the authoritative machine capabilities and configured resources."""
+    roots, _, _ = filesystem_settings()
+    configured = filesystem_workspaces()
+    workspace_items = []
+    for workspace in configured:
+        decision = evaluate_path(workspace["path"], roots)
+        workspace_items.append(
+            {
+                "name": workspace["name"],
+                "path": decision.normalized,
+                "access": workspace["access"],
+                "allowed": decision.allowed,
+                "reason": decision.reason,
+            }
+        )
+
+    payload = {
+        "agent": {
+            "name": "Windows AI Agent",
+            "version": "0.3.2",
+            "mode": "read_only",
+        },
+        "capabilities": _capability_snapshot(),
+        "workspaces": workspace_items,
+    }
+    audit_logger.record(
+        "resource.discovery",
+        "success",
+        details={
+            "capability_count": len(payload["capabilities"]),
+            "workspace_count": len(workspace_items),
+        },
+    )
+    return payload
 
 
 @app.get("/filesystem/check")

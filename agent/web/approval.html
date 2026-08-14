@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Windows AI Agent — Approval Center</title>
+  <style>
+    :root{font-family:Inter,Segoe UI,system-ui,sans-serif;color:#172033;background:#f4f7fb}*{box-sizing:border-box}body{margin:0}.wrap{max-width:1100px;margin:auto;padding:28px}.top{display:flex;justify-content:space-between;gap:20px;align-items:center;margin-bottom:22px}.brand h1{margin:0;font-size:26px}.brand p{margin:5px 0 0;color:#687386}.status{padding:9px 13px;border-radius:999px;background:#e7f7ed;color:#176b3a;font-weight:700}.card{background:white;border:1px solid #dce3ed;border-radius:16px;padding:20px;box-shadow:0 5px 20px rgba(20,35,60,.06);margin-bottom:18px}.row{display:flex;gap:10px;align-items:center}.token{flex:1;padding:11px 12px;border:1px solid #cbd5e1;border-radius:9px;font-family:ui-monospace,monospace}.button{border:0;border-radius:9px;padding:11px 16px;font-weight:700;cursor:pointer}.primary{background:#172033;color:white}.approve{background:#18794e;color:white}.deny{background:#b42318;color:white}.muted{color:#687386;font-size:13px}.approval{border:1px solid #e2e8f0;border-radius:14px;padding:18px;margin:12px 0}.approval h3{margin:0 0 10px}.meta{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px;margin:14px 0}.meta div{background:#f7f9fc;padding:10px;border-radius:9px}.label{display:block;color:#687386;font-size:12px;margin-bottom:3px}.value{font-weight:650;word-break:break-word}.actions{display:flex;gap:10px;margin-top:14px}.empty{text-align:center;padding:35px;color:#687386}.danger{color:#b42318}.ok{color:#176b3a}.hidden{display:none}@media(max-width:650px){.top{align-items:flex-start;flex-direction:column}.row{flex-direction:column;align-items:stretch}.actions button{flex:1}}
+  </style>
+</head>
+<body>
+<div class="wrap">
+  <div class="top">
+    <div class="brand"><h1>Windows AI Agent</h1><p>Local Security Control Center</p></div>
+    <div id="status" class="status">Not connected</div>
+  </div>
+
+  <section class="card">
+    <strong>Local authentication</strong>
+    <p class="muted">Paste the local agent token. It is kept only in this browser session and is never sent anywhere except 127.0.0.1:8765.</p>
+    <div class="row">
+      <input id="token" class="token" type="password" autocomplete="off" placeholder="X-Agent-Token">
+      <button class="button primary" onclick="connect()">Connect</button>
+    </div>
+    <p id="message" class="muted"></p>
+  </section>
+
+  <section class="card">
+    <div class="top" style="margin:0"><div><strong>Pending approvals</strong><p class="muted">No operation is executed by this screen. It only records an approval decision.</p></div><button class="button primary" onclick="loadApprovals()">Refresh</button></div>
+    <div id="list"><div class="empty">Connect to the local agent to view approvals.</div></div>
+  </section>
+</div>
+<script>
+const base='';
+let token=sessionStorage.getItem('windows-ai-agent-token')||'';
+const tokenInput=document.getElementById('token'); if(token) tokenInput.value=token;
+function setStatus(text,good=false){const e=document.getElementById('status');e.textContent=text;e.className='status';if(!good)e.style.background='#fff1f0',e.style.color='#b42318';}
+function headers(){return {'X-Agent-Token':token};}
+async function connect(){token=tokenInput.value.trim();if(!token){setStatus('Token required');return}sessionStorage.setItem('windows-ai-agent-token',token);await loadApprovals();}
+async function api(path,options={}){options.headers={...(options.headers||{}),...headers()};const r=await fetch(path,options);if(!r.ok){let d='HTTP '+r.status;try{const j=await r.json();d=j.detail||d}catch{}throw new Error(d)}return r.json();}
+async function loadApprovals(){if(!token){setStatus('Not connected');return}try{const data=await api('/approvals');setStatus('Authenticated',true);render(data.requests||[]);document.getElementById('message').textContent='Connected to localhost.'}catch(e){setStatus(e.message);document.getElementById('message').textContent=e.message}}
+function render(items){const root=document.getElementById('list');if(!items.length){root.innerHTML='<div class="empty"><div class="ok"><strong>No pending approvals</strong></div><div class="muted">The queue is empty.</div></div>';return}root.innerHTML=items.map(r=>`<article class="approval"><h3>${esc(r.capability)} <span class="muted">${esc(r.status)}</span></h3><p>${esc(r.reason)}</p><div class="meta"><div><span class="label">Request ID</span><span class="value">${esc(r.request_id)}</span></div><div><span class="label">Caller</span><span class="value">${esc(r.caller)}</span></div><div><span class="label">Created</span><span class="value">${esc(r.created_at)}</span></div><div><span class="label">Action</span><span class="value">${esc(JSON.stringify(r.action||{}))}</span></div></div><div class="actions"><button class="button deny" onclick="decide('${esc(r.request_id)}','denied')">Deny</button><button class="button approve" onclick="decide('${esc(r.request_id)}','approved')">Approve</button></div></article>`).join('')}
+async function decide(id,decision){if(!confirm((decision==='approved'?'Approve':'Deny')+' this request?'))return;try{await api('/approvals/'+encodeURIComponent(id)+'/decision',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({decision})});await loadApprovals()}catch(e){alert(e.message)}}
+function esc(v){return String(v??'').replace(/[&<>'"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]))}
+if(token) loadApprovals();
+</script>
+</body>
+</html>

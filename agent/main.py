@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from fastapi import FastAPI, HTTPException
+import psutil
+from fastapi import FastAPI, HTTPException, Query
 
 from agent.audit.logger import AuditLogger
 from agent.core.approval import ApprovalManager
@@ -18,6 +19,36 @@ app = FastAPI(
 policy = PolicyEngine()
 audit_logger = AuditLogger()
 approvals = ApprovalManager()
+
+
+def _mb(value: int) -> float:
+    return round(value / (1024**2), 2)
+
+
+def get_process_inventory(limit: int = 250) -> list[dict]:
+    """Return a bounded, read-only snapshot of running processes."""
+    processes: list[dict] = []
+    for process in psutil.process_iter(
+        ["pid", "name", "username", "exe", "status", "memory_info", "cpu_percent"]
+    ):
+        try:
+            info = process.info
+            memory_info = info.get("memory_info")
+            processes.append(
+                {
+                    "pid": info.get("pid"),
+                    "name": info.get("name"),
+                    "username": info.get("username"),
+                    "executable": info.get("exe"),
+                    "status": info.get("status"),
+                    "memory_mb": _mb(memory_info.rss) if memory_info else None,
+                    "cpu_percent": info.get("cpu_percent"),
+                }
+            )
+        except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
+            continue
+    processes.sort(key=lambda item: item["pid"] or 0)
+    return processes[:limit]
 
 
 @app.get("/")
@@ -63,9 +94,7 @@ def capability(capability: str) -> dict:
 
 @app.get("/approvals")
 def pending_approvals() -> dict:
-    return {
-        "requests": [request.__dict__ for request in approvals.list_pending()]
-    }
+    return {"requests": [request.__dict__ for request in approvals.list_pending()]}
 
 
 @app.get("/system")
@@ -78,3 +107,19 @@ def system() -> dict:
     result = get_system_inventory()
     audit_logger.record("system.inventory", "success")
     return result
+
+
+@app.get("/processes")
+def processes(limit: int = Query(default=250, ge=1, le=500)) -> dict:
+    decision = policy.evaluate("process_read")
+    if not decision.allowed:
+        audit_logger.record("process.inventory", "denied")
+        raise HTTPException(status_code=403, detail=decision.reason)
+
+    result = get_process_inventory(limit)
+    audit_logger.record(
+        "process.inventory",
+        "success",
+        details={"count": len(result), "limit": limit},
+    )
+    return {"count": len(result), "processes": result}

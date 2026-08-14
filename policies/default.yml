@@ -27,7 +27,7 @@ capabilities:
     risk: sensitive
 
   service_read:
-    enabled: false
+    enabled: true
     risk: read
 
   service_control:

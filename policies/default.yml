@@ -38,10 +38,18 @@ capabilities:
     enabled: false
     risk: dangerous
 
+  git:
+    enabled: false
+    risk: safe_write
+
   docker:
     enabled: false
     risk: sensitive
 
-  git:
+  network_read:
     enabled: false
-    risk: safe_write
+    risk: read
+
+  network_control:
+    enabled: false
+    risk: dangerous

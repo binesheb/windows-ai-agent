@@ -14,9 +14,19 @@ class AuditLogger:
         self.path = Path(path)
         self._lock = Lock()
 
-    def record(self, action: str, result: str, *, details: dict[str, Any] | None = None) -> None:
+    def record(
+        self,
+        action: str,
+        result: str,
+        *,
+        details: dict[str, Any] | None = None,
+        request_id: str | None = None,
+        caller: str | None = None,
+    ) -> None:
         event = {
             "timestamp": datetime.now(timezone.utc).isoformat(),
+            "request_id": request_id,
+            "caller": caller,
             "action": action,
             "result": result,
             "details": details or {},
@@ -27,5 +37,12 @@ class AuditLogger:
                 handle.write(json.dumps(event, separators=(",", ":")) + "\n")
 
 
-def audit(action: str, result: str, *, details: dict[str, Any] | None = None) -> None:
-    AuditLogger().record(action, result, details=details)
+def audit(
+    action: str,
+    result: str,
+    *,
+    details: dict[str, Any] | None = None,
+    request_id: str | None = None,
+    caller: str | None = None,
+) -> None:
+    AuditLogger().record(action, result, details=details, request_id=request_id, caller=caller)

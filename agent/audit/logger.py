@@ -6,6 +6,8 @@ from pathlib import Path
 from threading import Lock
 from typing import Any
 
+from agent.audit.context import get_caller, get_request_id
+
 
 class AuditLogger:
     """Append-only JSONL audit logger for security-relevant agent events."""
@@ -25,8 +27,8 @@ class AuditLogger:
     ) -> None:
         event = {
             "timestamp": datetime.now(timezone.utc).isoformat(),
-            "request_id": request_id,
-            "caller": caller,
+            "request_id": request_id if request_id is not None else get_request_id(),
+            "caller": caller if caller is not None else get_caller(),
             "action": action,
             "result": result,
             "details": details or {},

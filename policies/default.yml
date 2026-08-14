@@ -19,7 +19,7 @@ capabilities:
     risk: safe_write
 
   process_read:
-    enabled: false
+    enabled: true
     risk: read
 
   process_control:

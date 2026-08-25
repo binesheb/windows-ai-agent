@@ -9,6 +9,9 @@ The project follows [Semantic Versioning](https://semver.org/). Release notes sh
 ### Changed
 - Clarified the release history and version baseline for the security-first local control plane.
 
+### Fixed
+- Made the Windows test helper platform-neutral so the test suite can run on non-Windows CI runners without weakening the production Windows-only design intent.
+
 ## [0.5.1] - 2026-08-21
 
 ### Added

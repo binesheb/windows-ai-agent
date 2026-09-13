@@ -42,9 +42,9 @@ Windows AI Agent
 
 ## Current release
 
-**v0.1 — Foundation**
+**v0.5.1 — Foundation and controlled filesystem access**
 
-The first milestone provides a localhost API, system inventory, deny-by-default capability policy, audit logging, automated tests, and CI. It intentionally provides no arbitrary command execution.
+The current baseline provides a localhost API, system and process/service inventory, authenticated protected endpoints, deny-by-default capability policy, approval primitives, audit logging, controlled filesystem read access, automated tests, and CI. It intentionally provides no arbitrary command execution.
 
 ## Development
 
@@ -82,12 +82,12 @@ tests/          automated tests
 - [x] Deny-by-default policy engine
 - [x] Audit logging
 - [x] Automated tests and CI
-- [ ] Capability registry
-- [ ] Authentication
-- [ ] Approval workflow
-- [ ] Filesystem read capability
-- [ ] Process inspection
-- [ ] Windows service inspection
+- [x] Capability registry
+- [x] Authentication
+- [x] Approval workflow
+- [x] Filesystem read capability
+- [x] Process inspection
+- [x] Windows service inspection
 - [ ] Controlled process/service operations
 - [ ] Sandboxed PowerShell execution
 - [ ] Git integration

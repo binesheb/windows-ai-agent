@@ -31,12 +31,27 @@ class PolicyEngine:
         self._policy: dict[str, Any] = {}
         self.reload()
 
+    @staticmethod
+    def _deny_all_policy() -> dict[str, Any]:
+        return {"agent": {"mode": "read_only"}, "capabilities": {}}
+
     def reload(self) -> None:
         if not self.policy_path.exists():
-            self._policy = {"agent": {"mode": "read_only"}, "capabilities": {}}
+            self._policy = self._deny_all_policy()
             return
-        with self.policy_path.open("r", encoding="utf-8") as handle:
-            self._policy = yaml.safe_load(handle) or {}
+
+        try:
+            with self.policy_path.open("r", encoding="utf-8") as handle:
+                loaded = yaml.safe_load(handle) or {}
+        except yaml.YAMLError:
+            self._policy = self._deny_all_policy()
+            return
+
+        if not isinstance(loaded, dict) or not isinstance(loaded.get("capabilities", {}), dict):
+            self._policy = self._deny_all_policy()
+            return
+
+        self._policy = loaded
 
     def evaluate(self, capability: str) -> Decision:
         capabilities = self._policy.get("capabilities", {})

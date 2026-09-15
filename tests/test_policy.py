@@ -22,3 +22,17 @@ def test_unknown_capability_is_denied():
 def test_disabled_capability_is_denied():
     decision = PolicyEngine().evaluate("powershell")
     assert decision.allowed is False
+
+
+def test_malformed_policy_fails_closed(tmp_path: Path):
+    policy = tmp_path / "policy.yml"
+    policy.write_text("capabilities: [not-a-map]", encoding="utf-8")
+    decision = PolicyEngine(policy).evaluate("inventory")
+    assert decision.allowed is False
+
+
+def test_invalid_yaml_fails_closed(tmp_path: Path):
+    policy = tmp_path / "policy.yml"
+    policy.write_text("capabilities:\n  inventory: [", encoding="utf-8")
+    decision = PolicyEngine(policy).evaluate("inventory")
+    assert decision.allowed is False

@@ -3,6 +3,15 @@ $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
 Set-Location $root
 if ((git status --porcelain)) { throw 'Local changes detected; refusing to overwrite them.' }
+$origin = (git remote get-url origin).Trim()
+$allowedOrigins = @(
+    'https://github.com/binesheb/windows-ai-agent.git',
+    'git@github.com:binesheb/windows-ai-agent.git',
+    'ssh://git@github.com/binesheb/windows-ai-agent.git'
+)
+if ($allowedOrigins -notcontains $origin) {
+    throw "Untrusted origin '$origin'; refusing to fetch update content."
+}
 git fetch origin main
 $local = (git rev-parse HEAD).Trim()
 $remote = (git rev-parse origin/main).Trim()

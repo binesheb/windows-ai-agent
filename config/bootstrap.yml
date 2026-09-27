@@ -1,0 +1,16 @@
+schema: binesh-agent-bootstrap/v1
+model:
+  auto_selection:
+    ram_gb:
+      under_12: qwen3:4b
+      from_12_to_23: qwen3:8b
+      from_24: qwen3:14b
+runtime:
+  ollama_host: http://127.0.0.1:11434
+report:
+  path: agent-report.json
+  schema: binesh-agent-report/v1
+security:
+  install_method: winget
+  remote_execution: disabled
+  destructive_operations: disabled

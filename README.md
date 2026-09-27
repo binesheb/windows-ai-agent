@@ -46,6 +46,27 @@ Windows AI Agent
 
 The current baseline provides a localhost API, system and process/service inventory, authenticated protected endpoints, deny-by-default capability policy, approval primitives, audit logging, controlled filesystem read access, automated tests, and CI. It intentionally provides no arbitrary command execution.
 
+## Binesh AI bootstrap
+
+The repository now includes a setup agent for preparing a Windows machine for local Binesh AI development.
+
+Run from a clone of this repository:
+
+```powershell
+Set-ExecutionPolicy -Scope Process Bypass
+.\tools\binesh-bootstrap.ps1
+```
+
+The bootstrap detects hardware, installs/verifies Ollama, chooses a conservative local model, pulls it, runs a real inference test, prepares the Python environment, validates the agent source, and writes `agent-report.json`.
+
+Override the model when desired:
+
+```powershell
+.\tools\binesh-bootstrap.ps1 -Model qwen3:8b
+```
+
+See [docs/binesh-bootstrap.md](docs/binesh-bootstrap.md) and [docs/architecture-bootstrap.md](docs/architecture-bootstrap.md).
+
 ## Development
 
 Python 3.11+ is recommended.
@@ -70,6 +91,7 @@ agent/
 config/         runtime configuration
 policies/       capability policy
 docs/           architecture and security documentation
+tools/          bootstrap, update and test scripts
 tests/          automated tests
 .github/        CI automation
 ```
@@ -88,6 +110,7 @@ tests/          automated tests
 - [x] Filesystem read capability
 - [x] Process inspection
 - [x] Windows service inspection
+- [x] Binesh AI bootstrap and machine report
 - [ ] Controlled process/service operations
 - [ ] Sandboxed PowerShell execution
 - [ ] Git integration
@@ -96,6 +119,7 @@ tests/          automated tests
 - [ ] Secure outbound remote-control channel
 - [ ] Desktop approval UI
 - [ ] Multi-machine management
+- [ ] Signed controller/agent feedback channel
 
 ## Contribution
 

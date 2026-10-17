@@ -5,7 +5,8 @@ param(
  [switch]$NoStress,
  [string]$OutputDirectory="$env:USERPROFILE\Desktop\SurfaceBook3-Diagnostic"
 )
-$ErrorActionPreference='SilentlyContinue'
+$ErrorActionPreference='Continue'
+Set-StrictMode -Version 2.0
 New-Item -ItemType Directory -Force $OutputDirectory | Out-Null
 $R=[System.Collections.Generic.List[object]]::new();$F=@();$W=@()
 function Add($c,$t,$s,$v,$d=''){
@@ -57,7 +58,7 @@ $ec=$ev.Count;Add Stability ErrorEvents $(if($ec -lt 10){'PASS'}elseif($ec -lt 3
 $score=0
 if($cs.Model -match 'Surface Book 3'){$score+=10};if($cpuName -match 'i7-1065G7'){$score+=8};if($ram -ge 31){$score+=7};if($g1660){$score+=15}elseif($gnv){$score+=8}
 if($min -ge 90){$score+=20}elseif($min -ge 80){$score+=17}elseif($min -ge 70){$score+=13}elseif($min -ge 60){$score+=7}else{$score+=2}
-if($pd.Count -and @($pd|? HealthStatus -eq Healthy).Count -eq $pd.Count){$score+=12}else{$score+=4};if($free -ge 20){$score+=5}elseif($free -ge 10){$score+=3};if(!$pnp.Count){$score+=8}elseif($pnp.Count -lt 3){$score+=4};if($ec -lt 10){$score+=7}elseif($ec -lt 30){$score+=3};if($native){$score+=8}else{$score+=4};$score=[math]::Min(100,$score)
+$healthyDisks=@($pd | Where-Object { $_.HealthStatus -eq 'Healthy' });if($pd.Count -gt 0 -and $healthyDisks.Count -eq $pd.Count){$score+=12}else{$score+=4};if($free -ge 20){$score+=5}elseif($free -ge 10){$score+=3};if(!$pnp.Count){$score+=8}elseif($pnp.Count -lt 3){$score+=4};if($ec -lt 10){$score+=7}elseif($ec -lt 30){$score+=3};if($native){$score+=8}else{$score+=4};$score=[math]::Min(100,$score)
 $cap=if($score -ge 90){54000}elseif($score -ge 80){50000}elseif($score -ge 70){44000}elseif($score -ge 60){37000}else{30000};if($min -lt 60){$cap-=8000}elseif($min -lt 70){$cap-=5000}elseif($min -lt 80){$cap-=2500};$cap=[math]::Max(20000,[math]::Round($cap,-3))
 $verdict=if($F.Count){'WALK AWAY / FIX ISSUES'}elseif($AskingPrice -and $score -ge 85 -and $AskingPrice -le $cap){'BUY'}elseif($score -lt 60 -or ($AskingPrice -and $AskingPrice -gt $cap+8000)){'WALK AWAY'}else{'NEGOTIATE'}
 $sum=[pscustomobject]@{Timestamp=(Get-Date).ToString('s');Model=$model;Serial=$serial;CPU=$cpuName;RAMGB=$ram;GPU=$gt;Resolution=$res;MinBatteryHealth=$min;FreeSpace=$free;PnPErrors=$pnp.Count;Errors14d=$ec;Score=$score;AskingPrice=$AskingPrice;PriceCeiling=$cap;Verdict=$verdict}

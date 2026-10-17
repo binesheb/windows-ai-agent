@@ -6,7 +6,6 @@ param(
  [string]$OutputDirectory="$env:USERPROFILE\Desktop\SurfaceBook3-Diagnostic"
 )
 $ErrorActionPreference='Continue'
-Set-StrictMode -Version 2.0
 New-Item -ItemType Directory -Force $OutputDirectory | Out-Null
 $R=[System.Collections.Generic.List[object]]::new();$F=@();$W=@()
 function Add($c,$t,$s,$v,$d=''){

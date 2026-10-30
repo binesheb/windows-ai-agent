@@ -36,3 +36,11 @@ def test_invalid_yaml_fails_closed(tmp_path: Path):
     policy.write_text("capabilities:\n  inventory: [", encoding="utf-8")
     decision = PolicyEngine(policy).evaluate("inventory")
     assert decision.allowed is False
+
+
+
+def test_malformed_capability_entry_fails_closed(tmp_path: Path):
+    policy = tmp_path / "policy.yml"
+    policy.write_text("capabilities:\n  inventory: [not-a-map]\n", encoding="utf-8")
+    decision = PolicyEngine(policy).evaluate("inventory")
+    assert decision.allowed is False

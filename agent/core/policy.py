@@ -51,6 +51,16 @@ class PolicyEngine:
             self._policy = self._deny_all_policy()
             return
 
+        capabilities = loaded.get("capabilities", {})
+        if any(
+            not isinstance(entry, dict)
+            or ("enabled" in entry and not isinstance(entry["enabled"], bool))
+            or ("risk" in entry and not isinstance(entry["risk"], str))
+            for entry in capabilities.values()
+        ):
+            self._policy = self._deny_all_policy()
+            return
+
         self._policy = loaded
 
     def evaluate(self, capability: str) -> Decision:
